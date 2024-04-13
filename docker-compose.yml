@@ -1,0 +1,49 @@
+version: "3.3"
+services:
+  redis:
+    image: redis:6.0.7
+    container_name: redis
+    restart: always
+    volumes:
+      - redis_volume_data:/data
+    ports:
+      - 6379:6379
+
+  redis_insight:
+    image: redislabs/redisinsight:latest
+    container_name: redis_insight
+    restart: always
+    ports:
+      - 8001:8001
+    volumes:
+      - redis_insight_volume_data:/db
+
+  rabbitmq:
+    image: rabbitmq:3.8.23-management
+    container_name: rabbitmq
+    restart: always
+    ports:
+      - "5672:5672"  # RabbitMQ default port
+      - "15672:15672"  # RabbitMQ management UI port
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.17.0
+    container_name: elasticsearch
+    restart: always
+    environment:
+      - discovery.type=single-node
+    ports:
+      - "9200:9200"  # Elasticsearch HTTP port
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:7.17.0
+    container_name: kibana
+    restart: always
+    ports:
+      - "5601:5601"  # Kibana HTTP port
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200  # Point Kibana to Elasticsearch container
+
+volumes:
+  redis_volume_data:
+  redis_insight_volume_data:
