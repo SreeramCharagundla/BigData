@@ -14,46 +14,76 @@ exports.createPlan = async (req, res) => {
   const plan = req.body;
   const validation = validatePlan(plan);
   if (validation !== true) {
-      return res.status(400).json({ errors: validation });
+    return res.status(400).json({ errors: validation });
   }
 
   const existingPlan = await getPlanById(plan.objectId);
   if (existingPlan) {
-      return res.status(409).json({ message: "A plan with the same objectId already exists." });
+    return res.status(409).json({ message: "A plan with the same objectId already exists." });
   }
 
   await savePlan(plan);
   const etag = generateETag(plan);
 
   try {
+    // Index the parent plan
+    await client.index({
+      index: 'bigdataindexing',
+      id: plan.objectId,
+      body: {
+        ...plan,
+        plan_join_field: { name: 'plan' }
+      }
+    });
+    console.log(`Parent plan indexed with ID: ${plan.objectId}`);
+
+    // Index each linked service and its associated cost shares as children
+    plan.linkedPlanServices.forEach(async (service) => {
       await client.index({
-          index: 'bigdataindexing',
-          id: plan.objectId,
-          body: {
-              ...plan,
-              plan_join_field: { name: 'plan' }
+        index: 'bigdataindexing',
+        routing: plan.objectId,
+        body: {
+          ...service,
+          plan_join_field: {
+            name: 'linkedPlanServices',
+            parent: plan.objectId
           }
+        }
       });
-      console.log(`Parent plan indexed with ID: ${plan.objectId}`);
+      console.log(`Linked service indexed under parent ID: ${plan.objectId}`);
+      
+      // If there are nested children like linkedService or planserviceCostShares
+      if (service.linkedService) {
+        await client.index({
+          index: 'bigdataindexing',
+          routing: plan.objectId,
+          body: {
+            ...service.linkedService,
+            plan_join_field: {
+              name: 'linkedService',
+              parent: service.objectId
+            }
+          }
+        });
+      }
 
-      plan.linkedPlanServices.forEach(async (service) => {
-          await client.index({
-              index: 'bigdataindexing',
-              routing: plan.objectId,
-              body: {
-                  ...service,
-                  plan_join_field: {
-                      name: 'linkedPlanServices',
-                      parent: plan.objectId
-                  }
-              }
-          });
-          console.log(`Linked service indexed under parent ID: ${plan.objectId}`);
-      });
-
+      if (service.planserviceCostShares) {
+        await client.index({
+          index: 'bigdataindexing',
+          routing: plan.objectId,
+          body: {
+            ...service.planserviceCostShares,
+            plan_join_field: {
+              name: 'planserviceCostShares',
+              parent: service.objectId
+            }
+          }
+        });
+      }
+    });
   } catch (error) {
-      console.error("Failed to index document in Elasticsearch:", error);
-      return res.status(500).json({ message: "Failed to index document in Elasticsearch", error: error.message });
+    console.error("Failed to index document in Elasticsearch:", error);
+    return res.status(500).json({ message: "Failed to index document in Elasticsearch", error: error.message });
   }
 
   const message = JSON.stringify({ action: "create", planId: plan.objectId, timestamp: new Date() });
@@ -63,6 +93,7 @@ exports.createPlan = async (req, res) => {
 
   res.set("ETag", etag).status(201).json({ message: "Data added to Redis successfully." });
 };
+
 
   exports.getPlan = async (req, res) => {
     const { id } = req.params;

@@ -51,12 +51,13 @@ async function createIndex() {
                               }
                           }
                       },
-                      "plan_join_field": { // Add the join field
-                          "type": "join",
-                          "relations": {
-                              "plan": ["linkedPlanServices", "planCostShares"]
-                          }
-                      }
+                      "plan_join_field": {
+                        "type": "join",
+                        "relations": {
+                            "plan": ["linkedPlanServices", "planCostShares"],
+                            "linkedPlanServices": ["planserviceCostShares","linkedService"]
+                        }
+                    }
                   }
               }
           }
